@@ -1,6 +1,6 @@
 export const protect = (req,res,next)=>{
     if(!req.session.user){
-        res.json({message:"Unauthorized User"});
+        return res.status(401).json({message:"Unauthorized User"});
     }
     req.user = req.session.user;
     next();
