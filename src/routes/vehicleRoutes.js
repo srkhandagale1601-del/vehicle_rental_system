@@ -4,6 +4,6 @@ import { protect } from "../middlewares/authmiddleware.js";
 const router = express.Router();
 
 router.get("/", protect,fetchVehicles);
-router.get("/",protect,getAvailableVehicles);
+router.post("/available",protect,getAvailableVehicles);
 
 export default router;
