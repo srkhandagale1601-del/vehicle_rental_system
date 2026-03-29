@@ -1,9 +1,8 @@
 import express from "express";
 import { fetchVehicles,getAvailableVehicles } from "../controllers/vehicleController.js";
-import { protect } from "../middlewares/authmiddleware.js";
 const router = express.Router();
 
-router.get("/", protect,fetchVehicles);
-router.post("/available",protect,getAvailableVehicles);
+router.get("/", fetchVehicles);
+router.post("/available", getAvailableVehicles);
 
 export default router;

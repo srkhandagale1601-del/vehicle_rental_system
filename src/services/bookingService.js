@@ -6,28 +6,68 @@ export const createBookings = async ({
   start_date,
   end_date
 }) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  const existingBooking = await pool.query(
-    `SELECT * FROM bookings 
-     WHERE vehicle_id = $1
-     AND (
-       start_date <= $3 AND end_date >= $2
-     )`,
-    [vehicle_id, start_date, end_date]
-  );
+    // Lock the vehicle row to serialize concurrent bookings for the same vehicle.
+    const vehicleLock = await client.query(
+      `SELECT id FROM vehicles WHERE id = $1 FOR UPDATE`,
+      [vehicle_id]
+    );
+    if (vehicleLock.rows.length === 0) {
+      throw new Error("Vehicle not found");
+    }
 
-  if (existingBooking.rows.length > 0) {
-    throw new Error("Vehicle already booked for selected dates");
+    // Lock the user row to serialize concurrent requests from same user across tabs/devices.
+    const userLock = await client.query(
+      `SELECT id FROM users WHERE id = $1 FOR UPDATE`,
+      [user_id]
+    );
+    if (userLock.rows.length === 0) {
+      throw new Error("User not found");
+    }
+
+    const vehicleOverlap = await client.query(
+      `SELECT id FROM bookings
+       WHERE vehicle_id = $1
+       AND (start_date <= $3 AND end_date >= $2)
+       LIMIT 1`,
+      [vehicle_id, start_date, end_date]
+    );
+
+    if (vehicleOverlap.rows.length > 0) {
+      throw new Error("Vehicle already booked for selected dates");
+    }
+
+    // Prevent same user from holding overlapping bookings in same period.
+    const userOverlap = await client.query(
+      `SELECT id FROM bookings
+       WHERE user_id = $1
+       AND (start_date <= $3 AND end_date >= $2)
+       LIMIT 1`,
+      [user_id, start_date, end_date]
+    );
+
+    if (userOverlap.rows.length > 0) {
+      throw new Error("You already have a booking in this date range");
+    }
+
+    const result = await client.query(
+      `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [user_id, vehicle_id, start_date, end_date]
+    );
+
+    await client.query("COMMIT");
+    return result.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const result = await pool.query(
-    `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date)
-     VALUES ($1, $2, $3, $4)
-     RETURNING *`,
-    [user_id, vehicle_id, start_date, end_date]
-  );
-
-  return result.rows[0];
 };
 
 export const getUserBookingsService = async (userId) => {

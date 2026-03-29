@@ -9,7 +9,8 @@ import {errorHandler} from "./middlewares/errorHandler.js";
 const app = express();
 
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    // Dev-friendly: reflect caller origin to avoid frontend host mismatch issues.
+    origin: true,
     credentials: true,
 }));
 app.use(express.json());

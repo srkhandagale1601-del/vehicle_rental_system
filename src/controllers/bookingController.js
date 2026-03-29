@@ -3,6 +3,7 @@ import {
   getUserBookingsService,
   cancelBookingService,
 } from "../services/bookingService.js";
+import pool from "../config/db.js";
 export const createNewBookings = async (req, res, next) => {
   try {
     const { vehicle_id, start_date, end_date } = req.body;
@@ -19,6 +20,34 @@ export const createNewBookings = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: "Invalid date range"
+      });
+    }
+
+    const vehicleOverlap = await pool.query(
+      `SELECT id FROM bookings
+       WHERE vehicle_id = $1
+       AND (start_date <= $3 AND end_date >= $2)
+       LIMIT 1`,
+      [vehicle_id, start_date, end_date]
+    );
+    if (vehicleOverlap.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Vehicle already booked for selected dates"
+      });
+    }
+
+    const userOverlap = await pool.query(
+      `SELECT id FROM bookings
+       WHERE user_id = $1
+       AND (start_date <= $3 AND end_date >= $2)
+       LIMIT 1`,
+      [user_id, start_date, end_date]
+    );
+    if (userOverlap.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "You already have a booking in this date range"
       });
     }
 
