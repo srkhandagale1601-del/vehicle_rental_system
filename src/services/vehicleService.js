@@ -19,6 +19,16 @@ export const getVehicles = async (filters) => {
         query += ` AND rating >= $${values.length}`;
     }
 
+    if (filters.min_price !== undefined && filters.min_price !== "") {
+        values.push(Number(filters.min_price));
+        query += ` AND price_per_day >= $${values.length}`;
+    }
+
+    if (filters.max_price !== undefined && filters.max_price !== "") {
+        values.push(Number(filters.max_price));
+        query += ` AND price_per_day <= $${values.length}`;
+    }
+
     const result = await pool.query(query, values);
     return result.rows;
 };
@@ -28,6 +38,7 @@ export const getAvailableVehiclesService = async (start_date, end_date) => {
      WHERE NOT EXISTS (
        SELECT 1 FROM bookings b
        WHERE b.vehicle_id = v.id
+       AND b.status != 'CANCELLED'
        AND (b.start_date <= $2 AND b.end_date >= $1)
      )`,
     [start_date, end_date]

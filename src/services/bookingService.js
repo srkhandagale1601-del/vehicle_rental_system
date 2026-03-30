@@ -4,7 +4,8 @@ export const createBookings = async ({
   user_id,
   vehicle_id,
   start_date,
-  end_date
+  end_date,
+  total_price
 }) => {
   const client = await pool.connect();
   try {
@@ -54,10 +55,10 @@ export const createBookings = async ({
     }
 
     const result = await client.query(
-      `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date, total_price)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [user_id, vehicle_id, start_date, end_date]
+      [user_id, vehicle_id, start_date, end_date, total_price ?? null]
     );
 
     await client.query("COMMIT");
@@ -93,9 +94,28 @@ export const getUserBookingsService = async (userId) => {
 };
 
 export const cancelBookingService = async (bookingId, userId) => {
+  const bookingResult = await pool.query(
+    `SELECT status
+     FROM bookings
+     WHERE id = $1 AND user_id = $2`,
+    [bookingId, userId]
+  );
+
+  if (bookingResult.rows.length === 0) {
+    return null;
+  }
+
+  const status = bookingResult.rows[0].status;
+  if (status === "PAID") {
+    throw new Error("Cannot cancel a paid booking");
+  }
+  if (status !== "PENDING") {
+    return null;
+  }
+
   const result = await pool.query(
     `DELETE FROM bookings 
-     WHERE id = $1 AND user_id = $2 
+     WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
      RETURNING *`,
     [bookingId, userId]
   );

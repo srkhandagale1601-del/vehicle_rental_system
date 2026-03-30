@@ -23,39 +23,29 @@ export const createNewBookings = async (req, res, next) => {
       });
     }
 
-    const vehicleOverlap = await pool.query(
-      `SELECT id FROM bookings
-       WHERE vehicle_id = $1
-       AND (start_date <= $3 AND end_date >= $2)
-       LIMIT 1`,
-      [vehicle_id, start_date, end_date]
+    const vehicleResult = await pool.query(
+      `SELECT price_per_day FROM vehicles WHERE id = $1`,
+      [vehicle_id]
     );
-    if (vehicleOverlap.rows.length > 0) {
-      return res.status(409).json({
+
+    if (vehicleResult.rows.length === 0) {
+      return res.status(404).json({
         success: false,
-        message: "Vehicle already booked for selected dates"
+        message: "Vehicle not found"
       });
     }
 
-    const userOverlap = await pool.query(
-      `SELECT id FROM bookings
-       WHERE user_id = $1
-       AND (start_date <= $3 AND end_date >= $2)
-       LIMIT 1`,
-      [user_id, start_date, end_date]
-    );
-    if (userOverlap.rows.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "You already have a booking in this date range"
-      });
-    }
+    const price_per_day = Number(vehicleResult.rows[0].price_per_day || 0);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const days = Math.ceil((end - start) / msPerDay);
+    const total_price = Number((days * price_per_day * 1.08).toFixed(2));
 
     const booking = await createBookings({
       user_id,
       vehicle_id,
       start_date,
-      end_date
+      end_date,
+      total_price
     });
 
     res.status(201).json({
@@ -101,6 +91,12 @@ export const cancelBooking = async (req, res, next) => {
     });
 
   } catch (error) {
+    if (error.message === "Cannot cancel a paid booking") {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
     next(error);
   }
 };

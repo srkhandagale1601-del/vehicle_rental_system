@@ -184,6 +184,8 @@ function getFilterValues() {
     type: document.getElementById('typeSelect').value,
     seats: Number(document.getElementById('seatsSelect').value || 0),
     rating: Number(document.getElementById('ratingSelect').value || 0),
+    min_price: Number(document.getElementById('minPrice').value || 0),
+    max_price: Number(document.getElementById('maxPrice').value || 0),
     fromDate: document.getElementById('fromDate').value,
     toDate: document.getElementById('toDate').value
   };
@@ -206,6 +208,8 @@ function applyLocalFilters(list, filterVals) {
   if (filterVals.type) out = out.filter((v) => String(v.type).toLowerCase() === filterVals.type.toLowerCase());
   if (filterVals.seats) out = out.filter((v) => Number(v.seats) >= filterVals.seats);
   if (filterVals.rating) out = out.filter((v) => Number(v.rating) >= filterVals.rating);
+  if (filterVals.min_price) out = out.filter((v) => Number(v.price_per_day) >= filterVals.min_price);
+  if (filterVals.max_price) out = out.filter((v) => Number(v.price_per_day) <= filterVals.max_price);
   return applyQuickFilter(out);
 }
 
@@ -229,6 +233,8 @@ async function fetchVehiclesWithFilters(filterVals) {
       if (filterVals.type) params.set('type', filterVals.type);
       if (filterVals.seats) params.set('seats', String(filterVals.seats));
       if (filterVals.rating) params.set('rating', String(filterVals.rating));
+      if (filterVals.min_price) params.set('min_price', String(filterVals.min_price));
+      if (filterVals.max_price) params.set('max_price', String(filterVals.max_price));
       rows = await api(`/vehicles${params.toString() ? `?${params.toString()}` : ''}`);
     }
 
@@ -239,6 +245,76 @@ async function fetchVehiclesWithFilters(filterVals) {
   } catch (err) {
     await handleApiError(err, { authRequiredMessage: 'Unable to refresh fleet right now', openAuth: false });
   }
+}
+
+function initPriceSlider() {
+  const minSlider = document.getElementById('priceMin');
+  const maxSlider = document.getElementById('priceMax');
+  const rangeLabel = document.getElementById('priceRangeLabel');
+  const minInput = document.getElementById('minPrice');
+  const maxInput = document.getElementById('maxPrice');
+  const sliderFill = document.getElementById('sliderFill');
+
+  if (!minSlider || !maxSlider || !rangeLabel || !minInput || !maxInput || !sliderFill) return;
+
+  const sliderMin = Number(minSlider.min || 0);
+  const sliderMax = Number(minSlider.max || 15000);
+  const sliderStep = Number(minSlider.step || 100);
+
+  const clampToStep = (value) => {
+    const clamped = Math.min(sliderMax, Math.max(sliderMin, Number(value) || 0));
+    return Math.round(clamped / sliderStep) * sliderStep;
+  };
+
+  const render = (minVal, maxVal) => {
+    const minPercent = ((minVal - sliderMin) / (sliderMax - sliderMin)) * 100;
+    const maxPercent = ((maxVal - sliderMin) / (sliderMax - sliderMin)) * 100;
+    sliderFill.style.left = `${minPercent}%`;
+    sliderFill.style.width = `${maxPercent - minPercent}%`;
+    rangeLabel.textContent = `₹${minVal.toLocaleString('en-IN')} – ₹${maxVal.toLocaleString('en-IN')}`;
+  };
+
+  const syncFromSliders = (changed) => {
+    let minVal = clampToStep(minSlider.value);
+    let maxVal = clampToStep(maxSlider.value);
+
+    if (minVal > maxVal) {
+      if (changed === 'min') maxVal = minVal;
+      else minVal = maxVal;
+    }
+
+    minSlider.value = String(minVal);
+    maxSlider.value = String(maxVal);
+    minInput.value = String(minVal);
+    maxInput.value = String(maxVal);
+    render(minVal, maxVal);
+  };
+
+  const syncFromNumbers = (changed) => {
+    let minVal = clampToStep(minInput.value);
+    let maxVal = clampToStep(maxInput.value);
+
+    if (minInput.value === '') minVal = sliderMin;
+    if (maxInput.value === '') maxVal = sliderMax;
+
+    if (minVal > maxVal) {
+      if (changed === 'min') maxVal = minVal;
+      else minVal = maxVal;
+    }
+
+    minSlider.value = String(minVal);
+    maxSlider.value = String(maxVal);
+    minInput.value = String(minVal);
+    maxInput.value = String(maxVal);
+    render(minVal, maxVal);
+  };
+
+  minSlider.addEventListener('input', () => syncFromSliders('min'));
+  maxSlider.addEventListener('input', () => syncFromSliders('max'));
+  minInput.addEventListener('input', () => syncFromNumbers('min'));
+  maxInput.addEventListener('input', () => syncFromNumbers('max'));
+
+  syncFromSliders('max');
 }
 
 function vehicleCardTemplate(v) {
@@ -721,6 +797,7 @@ async function init() {
   initParticles();
   initCursor();
   initScrollProgress();
+  initPriceSlider();
   setupAuthTabs();
   bindEvents();
   updateNav();
