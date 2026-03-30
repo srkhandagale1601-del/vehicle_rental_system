@@ -509,9 +509,10 @@ async function loadBookings() {
     }
     el.bookingList.innerHTML = list.map((b) => {
       const status = String(b.status || 'PENDING').toLowerCase();
+      const isUnpaidBooking = status === 'pending' || status === 'confirmed';
       const days = dayDiff(b.start_date, b.end_date);
       const total = Number(b.total_price || (days * Number(b.price_per_day || 0) * 1.08));
-      return `<article class="booking-card"><div class="booking-top"><div><h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:30px;">${escapeHtml(b.vehicle_name || 'DriveX Vehicle')}</h3><p style="color:var(--text2);">${fmtDate(b.start_date)} - ${fmtDate(b.end_date)}</p></div><span class="status ${status}">${b.status || 'PENDING'}</span></div><div><strong>${formatMoney(total)}</strong></div><div class="booking-actions">${status === 'pending' ? `<button class="btn btn-accent" data-pay-booking="${b.id}" data-amount="${total}">Pay Now</button>` : ''}${status !== 'cancelled' ? `<button class="btn" data-cancel-booking="${b.id}">Cancel</button>` : ''}</div></article>`;
+      return `<article class="booking-card"><div class="booking-top"><div><h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:30px;">${escapeHtml(b.vehicle_name || 'DriveX Vehicle')}</h3><p style="color:var(--text2);">${fmtDate(b.start_date)} - ${fmtDate(b.end_date)}</p></div><span class="status ${status}">${b.status || 'PENDING'}</span></div><div><strong>${formatMoney(total)}</strong></div><div class="booking-actions">${isUnpaidBooking ? `<button class="btn btn-accent" data-pay-booking="${b.id}" data-amount="${total}">Pay Now</button><button class="btn" data-cancel-booking="${b.id}">Cancel</button>` : ''}</div></article>`;
     }).join('');
   } catch (err) {
     if (await handleApiError(err, { authRequiredMessage: 'Login required to view trips' })) return;
@@ -736,8 +737,13 @@ function bindEvents() {
       successAnimation(el.bookingSuccess, 'Booking Confirmed', `${currentVehicle.name} is reserved.`);
       showToast('Booking created successfully', 'success');
       await refreshFleetFromCurrentFilters();
+      await loadBookings();
       localStorage.setItem('drivex_booking_updated', String(Date.now()));
-      setTimeout(() => { closeModal('bookingOverlay'); openPaymentModal(booking.id, bookingTotal || booking.total_price || 0); }, 2000);
+      setTimeout(async () => {
+        closeModal('bookingOverlay');
+        await switchView('bookings');
+        openPaymentModal(booking.id, bookingTotal || booking.total_price || 0);
+      }, 2000);
     } catch (err) {
       await handleApiError(err, { authRequiredMessage: 'Login required for booking' });
     }
@@ -775,6 +781,8 @@ function bindEvents() {
     if (payBtn) { openPaymentModal(payBtn.dataset.payBooking, Number(payBtn.dataset.amount || 0)); return; }
     const cancelBtn = e.target.closest('[data-cancel-booking]');
     if (cancelBtn) {
+      const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+      if (!confirmed) return;
       try {
         await api(`/bookings/${cancelBtn.dataset.cancelBooking}`, { method: 'DELETE' });
         showToast('Booking cancelled', 'info');

@@ -97,6 +97,12 @@ export const cancelBooking = async (req, res, next) => {
         message: error.message
       });
     }
+    if (error.message === "Only pending or confirmed bookings can be cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
     next(error);
   }
 };

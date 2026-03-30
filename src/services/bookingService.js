@@ -1,5 +1,16 @@
 import pool from "../config/db.js";
 
+const hasBookingTotalPriceColumn = async () => {
+  const result = await pool.query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_name = 'bookings'
+       AND column_name = 'total_price'
+     LIMIT 1`
+  );
+  return result.rows.length > 0;
+};
+
 export const createBookings = async ({
   user_id,
   vehicle_id,
@@ -54,12 +65,20 @@ export const createBookings = async ({
       throw new Error("You already have a booking in this date range");
     }
 
-    const result = await client.query(
-      `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date, total_price)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [user_id, vehicle_id, start_date, end_date, total_price ?? null]
-    );
+    const canStoreTotalPrice = await hasBookingTotalPriceColumn();
+    const result = canStoreTotalPrice
+      ? await client.query(
+          `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date, total_price)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [user_id, vehicle_id, start_date, end_date, total_price ?? null]
+        )
+      : await client.query(
+          `INSERT INTO bookings (user_id, vehicle_id, start_date, end_date)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [user_id, vehicle_id, start_date, end_date]
+        );
 
     await client.query("COMMIT");
     return result.rows[0];
@@ -72,6 +91,7 @@ export const createBookings = async ({
 };
 
 export const getUserBookingsService = async (userId) => {
+  const canReadTotalPrice = await hasBookingTotalPriceColumn();
   const result = await pool.query(
     `SELECT 
        b.id,
@@ -79,7 +99,7 @@ export const getUserBookingsService = async (userId) => {
        b.start_date,
        b.end_date,
        b.status,
-       b.total_price,
+       ${canReadTotalPrice ? "b.total_price" : "NULL::numeric AS total_price"},
        v.name AS vehicle_name,
        v.image_url,
        v.price_per_day
@@ -95,7 +115,7 @@ export const getUserBookingsService = async (userId) => {
 
 export const cancelBookingService = async (bookingId, userId) => {
   const bookingResult = await pool.query(
-    `SELECT status
+    `SELECT id, status
      FROM bookings
      WHERE id = $1 AND user_id = $2`,
     [bookingId, userId]
@@ -105,17 +125,17 @@ export const cancelBookingService = async (bookingId, userId) => {
     return null;
   }
 
-  const status = bookingResult.rows[0].status;
+  const status = String(bookingResult.rows[0].status || "").trim().toUpperCase();
   if (status === "PAID") {
     throw new Error("Cannot cancel a paid booking");
   }
-  if (status !== "PENDING") {
-    return null;
+  if (status !== "PENDING" && status !== "CONFIRMED") {
+    throw new Error("Only pending or confirmed bookings can be cancelled");
   }
 
   const result = await pool.query(
     `DELETE FROM bookings 
-     WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
+     WHERE id = $1 AND user_id = $2 AND UPPER(status) IN ('PENDING', 'CONFIRMED')
      RETURNING *`,
     [bookingId, userId]
   );
